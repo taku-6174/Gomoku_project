@@ -2,6 +2,7 @@ import pygame
 import numpy as np 
 import sys
 import os
+import random
 
 
 class GomokuAnalyzer:
@@ -20,7 +21,7 @@ class GomokuAnalyzer:
         return False
     
     def evaluate_board(self, for_player=None):
-        """指定したプレイヤー視点で盤面を評価"""
+        """改良版評価関数（0-10のスケールに正規化）"""
         if for_player is None:
             for_player = self.current_player
         
@@ -30,17 +31,20 @@ class GomokuAnalyzer:
         for r in range(self.size):
             for c in range(self.size):
                 if self.board[r][c] == 0:
-                    # 基本スコア（中央に近いほど高い）
+                    total_score = 0
+                    
+                    # 中央性の基本スコア
                     center = self.size // 2
                     distance = abs(r - center) + abs(c - center)
-                    total_score = max(1, 20 - distance)
+                    total_score += max(1, 20 - distance) * 0.1  # 小さな重み
                     
-                    # 攻撃評価
+                    # 各プレイヤーの評価
                     for player in [1, 2]:
                         player_score = 0
+                        
                         for dr, dc in directions:
+                            # 石の連続数を数える
                             count = 1
-                            
                             # 正方向
                             for i in range(1, 5):
                                 nr, nc = r + dr * i, c + dc * i
@@ -48,7 +52,6 @@ class GomokuAnalyzer:
                                     count += 1
                                 else:
                                     break
-                            
                             # 負方向
                             for i in range(1, 5):
                                 nr, nc = r - dr * i, c - dc * i
@@ -57,21 +60,55 @@ class GomokuAnalyzer:
                                 else:
                                     break
                             
-                            # 連続数による加点
+                            # 連続石に基づくスコア
                             if count >= 5:
-                                player_score += 10000  # 勝利確定
+                                # 勝利手（実際にはcheck_winで検出されるが、評価用）
+                                player_score += 10000
                             elif count == 4:
-                                player_score += 1000   # 四のでき
+                                # 4連は非常に強力
+                                # 両端が空いているか確認
+                                front_open = False
+                                back_open = False
+                                
+                                # 正方向の先
+                                nr, nc = r + dr * count, c + dc * count
+                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
+                                    front_open = True
+                                
+                                # 負方向の先
+                                nr, nc = r - dr * count, c - dc * count
+                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
+                                    back_open = True
+                                
+                                if front_open or back_open:
+                                    player_score += 1000  # 少なくとも一端が空いている
+                            
                             elif count == 3:
-                                player_score += 100    # 三のでき
+                                # 両端が空いているか確認
+                                front_open = False
+                                back_open = False
+                                
+                                nr, nc = r + dr * 4, c + dc * 4
+                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
+                                    front_open = True
+                                
+                                nr, nc = r - dr * 4, c - dc * 4
+                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
+                                    back_open = True
+                                
+                                if front_open and back_open:
+                                    player_score += 500  # 両端が空いている活三
+                                elif front_open or back_open:
+                                    player_score += 200  # 一端だけ空いている
+                            
                             elif count == 2:
-                                player_score += 10     # 二のでき
+                                player_score += 10
                         
                         # 攻撃 vs 防御の重み付け
                         if player == for_player:
                             total_score += player_score * 1.0  # 攻撃
                         else:
-                            total_score += player_score * 1.2  # 防御を重視
+                            total_score += player_score * 1.5  # 防御をやや重視
                     
                     scores[r][c] = total_score
         
@@ -130,7 +167,6 @@ class GomokuAnalyzer:
         
         # 最高スコアの手からランダムに選択
         if best_moves:
-            import random
             return random.choice(best_moves)[:2]  # (r, c)のみ返す
         return None
     
@@ -325,20 +361,25 @@ def draw_board(analyzer, game_over, winner):
     for i, text in enumerate(controls):
         control_text = font_small.render(text, True, (80, 80, 80))
         screen.blit(control_text, (SCREEN_WIDTH - 200, info_y + i * 20))
-
     
     # ゲーム終了時の表示
-    if game_over and winner:
+    if game_over and winner is not None:
         # 半透明オーバーレイ
         overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 180))
         screen.blit(overlay, (0, 0))
         
-        # 勝利メッセージ
-        winner_color = "黒" if winner == 1 else "白"
-        win_text = font_large.render(f"🎉 {winner_color}の勝利！ 🎉", True, (255, 255, 0))
-        text_rect = win_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30))
-        screen.blit(win_text, text_rect)
+        # 引き分け
+        if winner == 0:
+            draw_text = font_large.render("引き分け！", True, (255, 255, 0))
+            text_rect = draw_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30))
+            screen.blit(draw_text, text_rect)
+        else:
+            # 勝利メッセージ
+            winner_color = "黒" if winner == 1 else "白"
+            win_text = font_large.render(f"{winner_color}の勝利！ ", True, (255, 255, 0))
+            text_rect = win_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30))
+            screen.blit(win_text, text_rect)
         
         # リスタート指示
         restart_text = font_medium.render("スペースキーで新しいゲームを開始", True, (255, 255, 255))
@@ -350,12 +391,58 @@ def draw_board(analyzer, game_over, winner):
         total_rect = total_moves.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50))
         screen.blit(total_moves, total_rect)
 
+def draw_home_screen():
+
+    """ホーム画面の描画"""
+    # 背景
+    screen.fill((200, 220, 255))
+
+    btn_p_vs_ai = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2, 200, 50)
+    btn_ai_vs_ai = pygame.Rect(SCREEN_WIDTH // 2 - 100, SCREEN_HEIGHT // 2 + 70, 200, 50)
+    
+    # タイトル
+    title = font_title.render("五目並べ AI解析シミュレーター", True, (0, 60, 120))
+    screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, SCREEN_HEIGHT // 4 - 60))
+    
+    # サブタイトル
+    subtitle = font_medium.render("九州大学芸術工学部 編入プロジェクト", True, (0, 0, 0))
+    screen.blit(subtitle, (SCREEN_WIDTH // 2 - subtitle.get_width() // 2, SCREEN_HEIGHT // 4))
+
+    # ボタン1：人間 vs AI
+    pygame.draw.rect(screen, (100, 150, 255), btn_p_vs_ai)
+    txt1 = font_medium.render("人間 vs AI", True, (255, 255, 255))
+    screen.blit(txt1, (btn_p_vs_ai.centerx - txt1.get_width()//2, btn_p_vs_ai.centery - txt1.get_height()//2))
+
+    # ボタン2：AI vs AI
+    pygame.draw.rect(screen, (100, 200, 150), btn_ai_vs_ai)
+    txt2 = font_medium.render("AI vs AI", True, (255, 255, 255))
+    screen.blit(txt2, (btn_ai_vs_ai.centerx - txt2.get_width()//2, btn_ai_vs_ai.centery - txt2.get_height()//2))
+    pygame.display.flip()
+    
+    while True:
+        for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    # ここで pos を取得する！
+                    pos = pygame.mouse.get_pos() 
+                    
+                    # pos を取得した直後に、どのボタンの上か判定する
+                    if btn_p_vs_ai.collidepoint(pos):
+                        return "PvsAI"
+                    elif btn_ai_vs_ai.collidepoint(pos):
+                        return "AIvsAI"
 # メインループ
 def main():
     analyzer = GomokuAnalyzer()
     game_over = False
     winner = None
-    
+    scene="menu"
+    modo= draw_home_screen()
+    print(f"選択モード: {modo}")
+
     clock = pygame.time.Clock()
     
     print("=" * 50)
@@ -374,50 +461,54 @@ def main():
     print("・ESCキー: 終了")
     print("=" * 50)
     
+
     while True:
-        # イベント処理
+            # イベント処理
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    pygame.quit()
-                    sys.exit()
-                
-                elif event.key == pygame.K_SPACE:
-                    # ゲーム再開
-                    if game_over:
-                        analyzer = GomokuAnalyzer()
-                        game_over = False
-                        winner = None
-                        print("\n" + "=" * 30)
-                        print("新しいゲームを開始します")
-                        print("=" * 30)
-            
-            if not game_over and event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = pygame.mouse.get_pos()
-                
-                # 盤面内のクリック判定
-                if (MARGIN <= mx <= SCREEN_WIDTH - MARGIN and 
-                    MARGIN <= my <= SCREEN_HEIGHT - INFO_AREA_HEIGHT - MARGIN):
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        pygame.quit()
+                        sys.exit()
                     
-                    c = round((mx - MARGIN) / CELL_SIZE)
-                    r = round((my - MARGIN) / CELL_SIZE)
+                    elif event.key == pygame.K_SPACE:
+                        # ゲーム再開
+                        if game_over:
+                            analyzer = GomokuAnalyzer()
+                            game_over = False
+                            winner = None
+                            print("\n" + "=" * 30)
+                            print("新しいゲームを開始します")
+                            print("=" * 30)
+                
+                if not game_over and event.type == pygame.MOUSEBUTTONDOWN:
+                    mx, my = pygame.mouse.get_pos()
                     
-                    if 0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE:
-                        if analyzer.put_stone(r, c, analyzer.current_player):
-                            print(f"{'黒' if analyzer.current_player == 1 else '白'}: ({r}, {c}) に着手")
-                            
-                            if analyzer.check_win(r, c, analyzer.current_player):
-                                winner = analyzer.current_player
-                                game_over = True
-                                print(f" {'黒' if winner == 1 else '白'}の勝利！ ")
-                                print(f"総着手数: {len(analyzer.move_history)}手")
-                            else:
-                                analyzer.current_player = 2 if analyzer.current_player == 1 else 1
-        
+                    # 盤面内のクリック判定
+                    if (MARGIN <= mx <= SCREEN_WIDTH - MARGIN and 
+                        MARGIN <= my <= SCREEN_HEIGHT - INFO_AREA_HEIGHT - MARGIN):
+                        
+                        c = round((mx - MARGIN) / CELL_SIZE)
+                        r = round((my - MARGIN) / CELL_SIZE)
+                        
+                        if 0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE:
+                            if analyzer.put_stone(r, c, analyzer.current_player):
+                                print(f"{'黒' if analyzer.current_player == 1 else '白'}: ({r}, {c}) に着手")
+                                
+                                if analyzer.check_win(r, c, analyzer.current_player):
+                                    winner = analyzer.current_player
+                                    game_over = True
+                                    print(f" {'黒' if winner == 1 else '白'}の勝利！ ")
+                                    print(f"総着手数: {len(analyzer.move_history)}手")
+                                elif len(analyzer.move_history) == BOARD_SIZE * BOARD_SIZE:
+                                    winner = 0
+                                    game_over = True
+                                    print("引き分け！")
+                                else:
+                                    analyzer.current_player = 2 if analyzer.current_player == 1 else 1
+            
         # 描画
         draw_board(analyzer, game_over, winner)
         pygame.display.flip()
