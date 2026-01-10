@@ -108,7 +108,7 @@ class GomokuAnalyzer:
                         if player == for_player:
                             total_score += player_score * 1.0  # 攻撃
                         else:
-                            total_score += player_score * 1.5  # 防御をやや重視
+                            total_score += player_score * 1.1 # 防御をやや重視
                     
                     scores[r][c] = total_score
         
@@ -232,7 +232,7 @@ font_medium = get_japanese_font(18)
 font_large = get_japanese_font(24)
 font_title = get_japanese_font(28)
 
-def draw_board(analyzer, game_over, winner):
+def draw_board(analyzer, game_over, winner, modo=None):
     """盤面と情報を描画"""
     # 背景（グラデーション風）
     for y in range(SCREEN_HEIGHT):
@@ -293,29 +293,30 @@ def draw_board(analyzer, game_over, winner):
                 pygame.draw.circle(screen, (200, 200, 200), (x, y), 16, 2)
             
             # 空マスの評価値表示
-            elif scores[r][c] > 0:
-                score_value = int(scores[r][c])
-                
-                # スコアに応じた色
-                if score_value >= 9:
-                    color = (255, 50, 50)    # 赤: 最善手
-                elif score_value >= 7:
-                    color = (255, 150, 50)   # 橙: 良い手
-                elif score_value >= 5:
-                    color = (255, 255, 50)   # 黄: 普通
-                elif score_value >= 3:
-                    color = (50, 200, 50)    # 緑: 悪い手
-                else:
-                    color = (150, 150, 150)  # 灰: 非常に悪い
-                
-                # 背景円
-                pygame.draw.circle(screen, (255, 255, 255, 180), (x, y), 14)
-                pygame.draw.circle(screen, color, (x, y), 14, 2)
-                
-                # 評価値テキスト
-                score_text = font_small.render(str(score_value), True, color)
-                text_rect = score_text.get_rect(center=(x, y))
-                screen.blit(score_text, text_rect)
+            elif modo != "PvsAI" or (modo == "PvsAI" and analyzer.current_player == 2):
+                if scores[r][c] > 0:
+                    score_value = int(scores[r][c])
+                    
+                    # スコアに応じた色
+                    if score_value >= 9:
+                        color = (255, 50, 50)    # 赤: 最善手
+                    elif score_value >= 7:
+                        color = (255, 150, 50)   # 橙: 良い手
+                    elif score_value >= 5:
+                        color = (255, 255, 50)   # 黄: 普通
+                    elif score_value >= 3:
+                        color = (50, 200, 50)    # 緑: 悪い手
+                    else:
+                        color = (150, 150, 150)  # 灰: 非常に悪い
+                    
+                    # 背景円
+                    pygame.draw.circle(screen, (255, 255, 255, 180), (x, y), 14)
+                    pygame.draw.circle(screen, color, (x, y), 14, 2)
+                    
+                    # 評価値テキスト
+                    score_text = font_small.render(str(score_value), True, color)
+                    text_rect = score_text.get_rect(center=(x, y))
+                    screen.blit(score_text, text_rect)
     
     # AIの最善手をハイライト
     if best_move and not game_over:
@@ -354,7 +355,7 @@ def draw_board(analyzer, game_over, winner):
     # 操作説明（右側）
     controls = [
         "【操作方法】",
-        "スペース: 再開",
+        "スペース: モード選択画面へ",
         "ESC: 終了"
     ]
     
@@ -439,9 +440,9 @@ def main():
     analyzer = GomokuAnalyzer()
     game_over = False
     winner = None
-    scene="menu"
-    modo= draw_home_screen()
-    print(f"選択モード: {modo}")
+    modo = None  # 初期値をNoneに変更
+    in_game = False  # ゲーム中かどうかのフラグを追加
+    show_mode_select = True  # モード選択画面表示フラグ
 
     clock = pygame.time.Clock()
     
@@ -457,33 +458,47 @@ def main():
     print()
     print("【操作方法】")
     print("・盤面クリック: 石を置く")
-    print("・スペースキー: ゲーム再開")
+    print("・スペースキー: モード選択に戻る")
     print("・ESCキー: 終了")
     print("=" * 50)
     
+    # AIの思考時間を制御するための変数
+    ai_thinking_time = 500  # AIの思考時間（ミリ秒）
+    last_ai_move_time = 0
 
     while True:
-            # イベント処理
+        # モード選択画面
+        if show_mode_select:
+            modo = draw_home_screen()
+            analyzer = GomokuAnalyzer()
+            game_over = False
+            winner = None
+            in_game = True
+            show_mode_select = False
+            last_ai_move_time = pygame.time.get_ticks()
+            print(f"\n選択モード: {modo}")
+            print("ゲーム開始！")
+        
+        # イベント処理
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        pygame.quit()
-                        sys.exit()
-                    
-                    elif event.key == pygame.K_SPACE:
-                        # ゲーム再開
-                        if game_over:
-                            analyzer = GomokuAnalyzer()
-                            game_over = False
-                            winner = None
-                            print("\n" + "=" * 30)
-                            print("新しいゲームを開始します")
-                            print("=" * 30)
+            
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
                 
-                if not game_over and event.type == pygame.MOUSEBUTTONDOWN:
+                elif event.key == pygame.K_SPACE:
+                    # モード選択画面に戻る
+                    show_mode_select = True
+                    in_game = False
+                    continue
+            
+            # プレイヤー対AIモードでのマウスクリック処理
+            if in_game and not game_over and modo == "PvsAI" and analyzer.current_player == 1:
+                if event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = pygame.mouse.get_pos()
                     
                     # 盤面内のクリック判定
@@ -495,22 +510,87 @@ def main():
                         
                         if 0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE:
                             if analyzer.put_stone(r, c, analyzer.current_player):
-                                print(f"{'黒' if analyzer.current_player == 1 else '白'}: ({r}, {c}) に着手")
+                                print(f"プレイヤー(黒): ({r}, {c}) に着手")
                                 
                                 if analyzer.check_win(r, c, analyzer.current_player):
                                     winner = analyzer.current_player
                                     game_over = True
-                                    print(f" {'黒' if winner == 1 else '白'}の勝利！ ")
+                                    in_game = False
+                                    print(f"プレイヤー(黒)の勝利！ ")
                                     print(f"総着手数: {len(analyzer.move_history)}手")
+                                    print("スペースキーでモード選択に戻ります")
                                 elif len(analyzer.move_history) == BOARD_SIZE * BOARD_SIZE:
                                     winner = 0
                                     game_over = True
+                                    in_game = False
                                     print("引き分け！")
+                                    print("スペースキーでモード選択に戻ります")
                                 else:
-                                    analyzer.current_player = 2 if analyzer.current_player == 1 else 1
+                                    # プレイヤーの手番終了、AIの手番に切り替え
+                                    analyzer.current_player = 2
+                                    last_ai_move_time = pygame.time.get_ticks()  # AIの思考開始時間
+        
+        if in_game and not game_over:
+            # プレイヤー対AIモード - AIの手番
+            if modo == "PvsAI" and analyzer.current_player == 2:
+                current_time = pygame.time.get_ticks()
+                if current_time - last_ai_move_time > 500:  # 500ms遅延
+                    best_move = analyzer.get_best_move()
+                    if best_move:
+                        r, c = best_move
+                        if analyzer.put_stone(r, c, analyzer.current_player):
+                            print(f"AI(白): ({r}, {c}) に着手")
+                            
+                            if analyzer.check_win(r, c, analyzer.current_player):
+                                winner = analyzer.current_player
+                                game_over = True
+                                in_game = False
+                                print(f"AI(白)の勝利！ ")
+                                print(f"総着手数: {len(analyzer.move_history)}手")
+                                print("スペースキーでモード選択に戻ります")
+                            elif len(analyzer.move_history) == BOARD_SIZE * BOARD_SIZE:
+                                winner = 0
+                                game_over = True
+                                in_game = False
+                                print("引き分け！")
+                                print("スペースキーでモード選択に戻ります")
+                            else:
+                                analyzer.current_player = 1  # プレイヤーの手番に戻す
+                    
+                    last_ai_move_time = current_time
             
+            # AI対AIモード
+            elif modo == "AIvsAI":
+                current_time = pygame.time.get_ticks()
+                
+                # 一定時間ごとにAIが手を打つ
+                if current_time - last_ai_move_time > ai_thinking_time:
+                    best_move = analyzer.get_best_move()
+                    if best_move:
+                        r, c = best_move
+                        if analyzer.put_stone(r, c, analyzer.current_player):
+                            print(f"{'黒' if analyzer.current_player == 1 else '白'}(AI): ({r}, {c}) に着手")
+                            
+                            if analyzer.check_win(r, c, analyzer.current_player):
+                                winner = analyzer.current_player
+                                game_over = True
+                                in_game = False
+                                print(f" {'黒' if winner == 1 else '白'}の勝利！ ")
+                                print(f"総着手数: {len(analyzer.move_history)}手")
+                                print("スペースキーでモード選択に戻ります")
+                            elif len(analyzer.move_history) == BOARD_SIZE * BOARD_SIZE:
+                                winner = 0
+                                game_over = True
+                                in_game = False
+                                print("引き分け！")
+                                print("スペースキーでモード選択に戻ります")
+                            else:
+                                analyzer.current_player = 2 if analyzer.current_player == 1 else 1
+                    
+                    last_ai_move_time = current_time
+        
         # 描画
-        draw_board(analyzer, game_over, winner)
+        draw_board(analyzer, game_over, winner, modo)
         pygame.display.flip()
         clock.tick(60)  # 60FPSに制限
 
