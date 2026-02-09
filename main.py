@@ -1,189 +1,10 @@
 import pygame
-import numpy as np 
 import sys
 import os
-import random
+from engine import GomokuAnalyzer
 
 
-class GomokuAnalyzer:
-    def __init__(self, size=15):
-        self.size = size
-        self.board = np.zeros((size, size), dtype=int)
-        self.current_player = 1  # 1:黒（先手） 2:白（後手）
-        self.move_history = []  # 着手履歴を記録
-    
-    def put_stone(self, r, c, player):
-        """石を置く。置ければTrue、置けなければFalse"""
-        if 0 <= r < self.size and 0 <= c < self.size and self.board[r][c] == 0:
-            self.board[r][c] = player
-            self.move_history.append((r, c, player))  # 履歴に追加
-            return True
-        return False
-    
-    def evaluate_board(self, for_player=None):
-        """改良版評価関数（0-10のスケールに正規化）"""
-        if for_player is None:
-            for_player = self.current_player
-        
-        scores = np.zeros((self.size, self.size))
-        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-        
-        for r in range(self.size):
-            for c in range(self.size):
-                if self.board[r][c] == 0:
-                    total_score = 0
-                    
-                    # 中央性の基本スコア
-                    center = self.size // 2
-                    distance = abs(r - center) + abs(c - center)
-                    total_score += max(1, 20 - distance) * 0.1  # 小さな重み
-                    
-                    # 各プレイヤーの評価
-                    for player in [1, 2]:
-                        player_score = 0
-                        
-                        for dr, dc in directions:
-                            # 石の連続数を数える
-                            count = 1
-                            # 正方向
-                            for i in range(1, 5):
-                                nr, nc = r + dr * i, c + dc * i
-                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == player:
-                                    count += 1
-                                else:
-                                    break
-                            # 負方向
-                            for i in range(1, 5):
-                                nr, nc = r - dr * i, c - dc * i
-                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == player:
-                                    count += 1
-                                else:
-                                    break
-                            
-                            # 連続石に基づくスコア
-                            if count >= 5:
-                                # 勝利手（実際にはcheck_winで検出されるが、評価用）
-                                player_score += 10000
-                            elif count == 4:
-                                # 4連は非常に強力
-                                # 両端が空いているか確認
-                                front_open = False
-                                back_open = False
-                                
-                                # 正方向の先
-                                nr, nc = r + dr * count, c + dc * count
-                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
-                                    front_open = True
-                                
-                                # 負方向の先
-                                nr, nc = r - dr * count, c - dc * count
-                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
-                                    back_open = True
-                                
-                                if front_open or back_open:
-                                    player_score += 1000  # 少なくとも一端が空いている
-                            
-                            elif count == 3:
-                                # 両端が空いているか確認
-                                front_open = False
-                                back_open = False
-                                
-                                nr, nc = r + dr * 4, c + dc * 4
-                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
-                                    front_open = True
-                                
-                                nr, nc = r - dr * 4, c - dc * 4
-                                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == 0:
-                                    back_open = True
-                                
-                                if front_open and back_open:
-                                    player_score += 500  # 両端が空いている活三
-                                elif front_open or back_open:
-                                    player_score += 200  # 一端だけ空いている
-                            
-                            elif count == 2:
-                                player_score += 10
-                        
-                        # 攻撃 vs 防御の重み付け
-                        if player == for_player:
-                            total_score += player_score * 1.0  # 攻撃
-                        else:
-                            total_score += player_score * 1.1 # 防御をやや重視
-                    
-                    scores[r][c] = total_score
-        
-        # 0-10に正規化
-        max_val = np.max(scores)
-        if max_val > 0:
-            scores = (scores / max_val) * 10
-            scores = np.round(scores)  # 整数に丸める
-        
-        return scores
-    
-    def check_win(self, r, c, player):
-        """勝利判定"""
-        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-        
-        for dr, dc in directions:
-            count = 1
-            
-            # 正方向
-            for i in range(1, 5):
-                nr, nc = r + dr * i, c + dc * i
-                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == player:
-                    count += 1
-                else:
-                    break
-            
-            # 負方向
-            for i in range(1, 5):
-                nr, nc = r - dr * i, c - dc * i
-                if 0 <= nr < self.size and 0 <= nc < self.size and self.board[nr][nc] == player:
-                    count += 1
-                else:
-                    break
-            
-            if count >= 5:
-                return True
-        
-        return False
-    
-    def get_best_move(self):
-        """最もスコアの高い手を返す"""
-        scores = self.evaluate_board(self.current_player)
-        
-        max_score = -1
-        best_moves = []
-        
-        for r in range(self.size):
-            for c in range(self.size):
-                if self.board[r][c] == 0:
-                    score = scores[r][c]
-                    if score > max_score:
-                        max_score = score
-                        best_moves = [(r, c, score)]
-                    elif score == max_score:
-                        best_moves.append((r, c, score))
-        
-        # 最高スコアの手からランダムに選択
-        if best_moves:
-            return random.choice(best_moves)[:2]  # (r, c)のみ返す
-        return None
-    
-    def get_game_state(self):
-        """ゲーム状態を文字列で返す"""
-        state = []
-        for r in range(self.size):
-            row = []
-            for c in range(self.size):
-                if self.board[r][c] == 0:
-                    row.append('.')
-                elif self.board[r][c] == 1:
-                    row.append('B')
-                else:
-                    row.append('W')
-            state.append(''.join(row))
-        return '\n'.join(state)
+
 
 # Pygame設定
 CELL_SIZE = 40
@@ -239,6 +60,9 @@ def draw_board(analyzer, game_over, winner, modo=None):
         color_value = 220 - (y / SCREEN_HEIGHT * 20)
         pygame.draw.line(screen, (color_value, 179, 92), (0, y), (SCREEN_WIDTH, y))
     
+    # 情報表示エリアのy座標を最初に計算
+    info_y = SCREEN_HEIGHT - INFO_AREA_HEIGHT + 10  # この行を追加
+    
     # 盤面背景（木目調）
     board_bg = pygame.Rect(
         MARGIN - 15, MARGIN - 15,
@@ -292,32 +116,63 @@ def draw_board(analyzer, game_over, winner, modo=None):
                 pygame.draw.circle(screen, (250, 250, 250), (x, y), 16)
                 pygame.draw.circle(screen, (200, 200, 200), (x, y), 16, 2)
             
-            # 空マスの評価値表示
+              # 空マスの評価値表示
             elif modo != "PvsAI" or (modo == "PvsAI" and analyzer.current_player == 2):
-                if scores[r][c] > 0:
-                    score_value = int(scores[r][c])
+                # numpyをインポートしていない場合のために修正
+                score_value = scores[r][c] if r < len(scores) and c < len(scores[0]) else 0
+                
+                # スコアのログ変換による正規化（改良版評価関数用）
+                if score_value > 0:
+                    # 対数スケールで正規化（1-100に収める）
+                    # numpyを使わない方法に修正
+                    import math
+                    log_score = min(100, max(1, int(math.log10(score_value + 1) * 20)))
                     
-                    # スコアに応じた色
-                    if score_value >= 9:
-                        color = (255, 50, 50)    # 赤: 最善手
-                    elif score_value >= 7:
-                        color = (255, 150, 50)   # 橙: 良い手
-                    elif score_value >= 5:
-                        color = (255, 255, 50)   # 黄: 普通
-                    elif score_value >= 3:
-                        color = (50, 200, 50)    # 緑: 悪い手
+                    # スコアに応じた色（改良版）
+                    if log_score >= 90:
+                        color = (255, 50, 50)    # 赤: 最善手（活四など）
+                    elif log_score >= 70:
+                        color = (255, 150, 50)   # 橙: 強力な手（活三など）
+                    elif log_score >= 50:
+                        color = (255, 255, 50)   # 黄: 良い手
+                    elif log_score >= 30:
+                        color = (50, 200, 50)    # 緑: 普通の手
+                    elif log_score >= 10:
+                        color = (100, 150, 255)  # 青: 悪い手
                     else:
-                        color = (150, 150, 150)  # 灰: 非常に悪い
+                        color = (150, 150, 150)  # 灰: 非常に悪い手
                     
                     # 背景円
-                    pygame.draw.circle(screen, (255, 255, 255, 180), (x, y), 14)
-                    pygame.draw.circle(screen, color, (x, y), 14, 2)
+                    # 半透明背景を作成
+                    circle_surface = pygame.Surface((28, 28), pygame.SRCALPHA)
+                    pygame.draw.circle(circle_surface, (255, 255, 255, 200), (14, 14), 14)
+                    screen.blit(circle_surface, (x-14, y-14))
                     
-                    # 評価値テキスト
-                    score_text = font_small.render(str(score_value), True, color)
+                    # 評価値テキスト（2桁まで表示）
+                    score_text = font_small.render(str(log_score), True, color)
                     text_rect = score_text.get_rect(center=(x, y))
                     screen.blit(score_text, text_rect)
     
+    # AIの思考情報を追加表示
+    if modo == "PvsAI" and analyzer.current_player == 2 and not game_over:
+        # AIが考えていることを表示
+        thinking_text = font_small.render("AIが考え中...", True, (100, 100, 100))
+        screen.blit(thinking_text, (SCREEN_WIDTH - 200, info_y + 60))
+    
+    # 評価値の凡例を追加
+    legend_y = info_y + 40
+    legend_texts = [
+        ("赤(90-100): 勝ち確定", (255, 50, 50)),
+        ("橙(70-89): 強力", (255, 150, 50)),
+        ("黄(50-69): 良い", (255, 255, 50)),
+        ("緑(30-49): 普通", (50, 200, 50)),
+        ("青(10-29): 悪い", (100, 150, 255)),
+        ("灰(1-9): 最悪", (150, 150, 150))
+    ]
+    for i, (text, color) in enumerate(legend_texts):
+        legend = font_small.render(text, True, color)
+        screen.blit(legend, (SCREEN_WIDTH - 250, legend_y + i * 18))
+
     # AIの最善手をハイライト
     if best_move and not game_over:
         br, bc = best_move
@@ -335,8 +190,7 @@ def draw_board(analyzer, game_over, winner, modo=None):
     pygame.draw.line(screen, (180, 180, 180), (0, SCREEN_HEIGHT - INFO_AREA_HEIGHT), 
                     (SCREEN_WIDTH, SCREEN_HEIGHT - INFO_AREA_HEIGHT), 2)
     
-    # ゲーム情報
-    info_y = SCREEN_HEIGHT - INFO_AREA_HEIGHT + 10
+    # ゲーム情報 - info_yはすでに定義済み
     
     # タイトル
     title = font_title.render("五目並べ AI解析ツール", True, (0, 60, 120))
