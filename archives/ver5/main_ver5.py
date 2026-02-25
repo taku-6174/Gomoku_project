@@ -2,7 +2,7 @@ import pygame
 import sys
 import os
 import math
-from engine import GomokuAnalyzer
+from engine_ver5 import GomokuAnalyzer
 
 # Pygame設定
 CELL_SIZE = 40
@@ -420,4 +420,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
