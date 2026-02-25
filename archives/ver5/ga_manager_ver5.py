@@ -1,6 +1,6 @@
 import random
 import json
-from engine import GomokuAnalyzer
+from engine_ver5 import GomokuAnalyzer
 import matplotlib.pyplot as plt
 
 class Individual:
@@ -156,4 +156,5 @@ if __name__ == "__main__":
     # indent=4 をつけると綺麗に改行されます
         json.dump(history[-1]['weights'], f, indent=4)
     
+
     save_fitness_graph(history)
