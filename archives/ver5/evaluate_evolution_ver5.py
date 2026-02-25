@@ -1,7 +1,7 @@
 # evaluate_evolution.py
 import json
-from ga_manager import Individual, play_match
-from engine import GomokuAnalyzer
+from ga_manager_ver5 import Individual, play_match
+from engine_ver5 import GomokuAnalyzer
 
 def main():
     # 初期個体
@@ -63,4 +63,5 @@ def main():
     print(f"後手勝率: {total_second/100*100:.1f}%")
 
 if __name__ == "__main__":
+
     main()
